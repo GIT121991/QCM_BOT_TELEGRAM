@@ -1,97 +1,89 @@
-import mysql.connector as MC
-
+import asyncpg
 
 class DataBase:
     def __init__(self):
-        # Configuration de la connexion à MySQL
+        # Configuration pour PostgreSQL
         self.db_create = {
             'host': 'localhost',
-            'user': 'root',
-            'password': ''
+            'user': 'postgres',
+            'password': 'Gtissa12'
         }
         self.db_config = {
             'host': 'localhost',
-            'user': 'root',
-            'password': '',
-            'database': 'QcmBotDB'
+            'user': 'postgres',
+            'password': 'Gtissa12',
+            'database': 'qcmbotdb'
         }
 
-    def createDB(self):
+    async def createDB(self):
         """
         Crée une base de données si elle n'existe pas encore.
         """
-        # Connexion au serveur MySQL
-        connexion = MC.connect(**self.db_create)
-        cursor = connexion.cursor()
+        connection = await asyncpg.connect(
+            host=self.db_create['host'],
+            user=self.db_create['user'],
+            password=self.db_create['password']
+        )
+        try:
+            db_name = self.db_config['database']
+            exists_query = f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"
+            result = await connection.fetch(exists_query)
 
-        # Commande SQL pour créer une base de données
-        db_name = 'QcmBotDB'
-        create_db_query = f"CREATE DATABASE IF NOT EXISTS {db_name}"
-        cursor.execute(create_db_query)
-        print("Base de données créée avec succès.")
+            if not result:
+                create_db_query = f"CREATE DATABASE {db_name}"
+                await connection.execute(create_db_query)
+                print(f"Base de données '{db_name}' créée avec succès.")
+            else:
+                print(f"Base de données '{db_name}' existe déjà.")
+        finally:
+            await connection.close()
 
-        # Fermeture de la connexion
-        cursor.close()
-        connexion.close()
-
-    def create_connection(self):
+    async def execute_query(self, query: str):
         """
-        Crée une connexion à la base de données.
+        Exécute une requête SQL en ouvrant une nouvelle connexion pour chaque opération.
         """
-        self.conn = MC.connect(**self.db_config)
-        self.cursor = self.conn.cursor()
+        connection = await asyncpg.connect(**self.db_config)
+        try:
+            await connection.execute(query)
+        finally:
+            await connection.close()
 
-    def create_table_users(self):
+    async def create_table_users(self):
         """
         Crée une table pour les utilisateurs (élèves).
         """
-        self.create_connection()
-        table_name = 'users'
-
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
             telegram_id BIGINT NOT NULL UNIQUE,
             name VARCHAR(255) NOT NULL,
             score INT DEFAULT 0,
             current_question INT DEFAULT 0
         );
         """
-        self.cursor.execute(create_table_query)
-        print(f"Table '{table_name}' créée avec succès.")
-        self.conn.commit()
-        self.cursor.close()
-        self.conn.close()
+        await self.execute_query(create_table_query)
+        print("Table 'users' créée avec succès.")
 
-    def create_table_themes(self):
+    async def create_table_themes(self):
         """
-        Crée une table pour stocker les themes du QCM.
+        Crée une table pour stocker les thèmes du QCM.
         """
-        self.create_connection()
-        table_name = 'themes'
-
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS themes (
+            id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL
         );
         """
-        self.cursor.execute(create_table_query)
-        print(f"Table '{table_name}' créée avec succès.")
-        self.conn.commit()
-        self.cursor.close()
-        self.conn.close()
+        await self.execute_query(create_table_query)
+        print("Table 'themes' créée avec succès.")
 
-    def create_table_questions(self):
+    async def create_table_questions(self):
         """
         Crée une table pour stocker les questions du QCM.
         """
-        self.create_connection()
-        table_name = 'questions'
-
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS questions (
+            id SERIAL PRIMARY KEY,
             theme_id INT NOT NULL,
             question TEXT NOT NULL,
             option1 VARCHAR(255) NOT NULL,
@@ -99,68 +91,50 @@ class DataBase:
             option3 VARCHAR(255) NOT NULL,
             option4 VARCHAR(255) NOT NULL,
             correct_option VARCHAR(255) NOT NULL,
-            FOREIGN KEY (theme_id) REFERENCES themes(id)
+            FOREIGN KEY (theme_id) REFERENCES themes(id) ON DELETE CASCADE
         );
         """
-        try:
-            self.cursor.execute(create_table_query)
-            print(f"Table '{table_name}' créée avec succès.")
-            self.conn.commit()
-        except Exception as e:
-            print(f"Erreur lors de la création de la table '{table_name}':", e)
-        finally:
-            self.cursor.close()
-            self.conn.close()
+        await self.execute_query(create_table_query)
+        print("Table 'questions' créée avec succès.")
 
-    def create_table_scores_history(self):
+    async def create_table_scores_history(self):
         """
         Crée une table pour stocker l'historique des scores du QCM.
         """
-        # Assurez-vous que la connexion est créée
-        self.create_connection()
-        table_name = 'scores_history'
-
-        create_table_query = f"""
-            CREATE TABLE IF NOT EXISTS {table_name} (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                telegram_id BIGINT NOT NULL,
-                score INT NOT NULL,
-                total_questions INT NOT NULL,
-                attempt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-            );
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS scores_history (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT NOT NULL,
+            score INT NOT NULL,
+            total_questions INT NOT NULL,
+            attempt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+        );
         """
-        try:
-            self.cursor.execute(create_table_query)
-            self.conn.commit()
-            print(f"Table '{table_name}' créée avec succès.")
-        except Exception as e:
-            print(f"Erreur lors de la création de la table '{table_name}': {e}")
-        finally:
-            self.cursor.close()
-            self.conn.close()
+        await self.execute_query(create_table_query)
+        print("Table 'scores_history' créée avec succès.")
 
-    def insert_sample_questions(self):
+    async def insert_sample_questions(self):
         """
         Insère un thème et des questions d'exemple dans les tables `themes` et `questions`.
         """
         try:
-            # Crée une connexion à la base de données
-            self.create_connection()
+            # Connexion à la base de données
+            conn = await asyncpg.connect(**self.db_config)
 
-            # Insérer un thème
-            insert_theme_query = "INSERT INTO themes (name) VALUES (%s)"
-            self.cursor.execute(insert_theme_query, ("Python Niveau 1",))
-
-            # Récupérer l'ID du thème inséré
-            theme_id = self.cursor.lastrowid
+            # Insérer un thème et récupérer son ID
+            insert_theme_query = """
+            INSERT INTO themes (name) 
+            VALUES ($1) 
+            RETURNING id;
+            """
+            theme_id = await conn.fetchval(insert_theme_query, "Python Niveau 1")
 
             # Insérer les questions liées au thème
             insert_questions_query = """
             INSERT INTO questions (theme_id, question, option1, option2, option3, option4, correct_option)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES ($1, $2, $3, $4, $5, $6, $7);
             """
-
             questions = [
                 # 15 Questions existantes
                 (theme_id, 'Quelle méthode permet d\'ajouter un élément à une liste en Python ?', 'append()', 'add()',
@@ -176,8 +150,9 @@ class DataBase:
                  'texte', 'str'),
                 (theme_id, 'Quel est le résultat de 10 % 3 en Python ?', '3', '1', '0', '10', '1'),
                 (
-                theme_id, 'Quelle est la méthode utilisée pour obtenir la longueur d\'une liste ?', 'length()', 'len()',
-                'size()', 'count()', 'len()'),
+                    theme_id, 'Quelle est la méthode utilisée pour obtenir la longueur d\'une liste ?', 'length()',
+                    'len()',
+                    'size()', 'count()', 'len()'),
                 (theme_id, 'Quel mot-clé est utilisé pour créer une fonction ?', 'function', 'def', 'fun', 'method',
                  'def'),
                 (theme_id, 'Quelle est la sortie de "print(2**3)" ?', '5', '6', '8', '9', '8'),
@@ -205,9 +180,8 @@ class DataBase:
                  'stop', 'end', 'break', 'exit', 'break')
             ]
 
-            # Exécuter les insertions
-            self.cursor.executemany(insert_questions_query, questions)
-            self.conn.commit()
+            # Exécuter les insertions pour chaque question
+            await conn.executemany(insert_questions_query, questions)
 
             print("Thème et questions insérés avec succès.")
 
@@ -215,154 +189,152 @@ class DataBase:
             print("Erreur lors de l'insertion des données :", e)
 
         finally:
-            if self.cursor:
-                self.cursor.close()
-            if self.conn:
-                self.conn.close()
+            # Fermeture de la connexion
+            await conn.close()
 
-    def insert_theme1_questions(self):
+    async def insert_theme1_questions(self):
         """
         Insère un thème et des questions d'exemple dans les tables `themes` et `questions`.
         """
         try:
-            # Crée une connexion à la base de données
-            self.create_connection()
+            # Connexion à la base de données
+            conn = await asyncpg.connect(**self.db_config)
 
-            # Insérer un thème
-            insert_theme_query = "INSERT INTO themes (name) VALUES (%s)"
-            self.cursor.execute(insert_theme_query, ("Communication entre machines sur Internet (Vol 1)",))
-
-            # Récupérer l'ID du thème inséré
-            theme_id = self.cursor.lastrowid
+            # Insérer un thème et récupérer son ID
+            insert_theme_query = """
+            INSERT INTO themes (name) 
+            VALUES ($1) 
+            RETURNING id;
+            """
+            theme_id = await conn.fetchval(insert_theme_query, "Communication entre machines sur Internet (Vol 1)")
 
             # Insérer les questions liées au thème
             insert_questions_query = """
             INSERT INTO questions (theme_id, question, option1, option2, option3, option4, correct_option)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES ($1, $2, $3, $4, $5, $6, $7);
             """
-
             questions = [
                 # Questions extraites du document
                 (theme_id, "Qu'est-ce que la communication entre machines ?",
-                    "L'échange de données entre des appareils électroniques connectés.",
-                    "La communication uniquement entre ordinateurs.",
-                    "L'utilisation de téléphones pour discuter.",
-                    "L'envoi de lettres par la poste.",
-                    "L'échange de données entre des appareils électroniques connectés."),
+                 "L'échange de données entre des appareils électroniques connectés.",
+                 "La communication uniquement entre ordinateurs.",
+                 "L'utilisation de téléphones pour discuter.",
+                 "L'envoi de lettres par la poste.",
+                 "L'échange de données entre des appareils électroniques connectés."),
                 (theme_id, "Quel type de réseau permet une communication entre machines locales ?",
-                    "WAN (Wide Area Network)", "LAN (Local Area Network)",
-                    "VPN (Virtual Private Network)", "Internet",
-                    "LAN (Local Area Network)"),
+                 "WAN (Wide Area Network)", "LAN (Local Area Network)",
+                 "VPN (Virtual Private Network)", "Internet",
+                 "LAN (Local Area Network)"),
                 (theme_id, "Quel est l'avantage principal d'un câble Ethernet ?",
-                    "Mobilité", "Vitesse élevée", "Coût faible",
-                    "Facilité d'installation", "Vitesse élevée"),
+                 "Mobilité", "Vitesse élevée", "Coût faible",
+                 "Facilité d'installation", "Vitesse élevée"),
                 (theme_id, "Quel est un inconvénient du Wi-Fi ?",
-                    "Vitesse très élevée", "Mobilité limitée",
-                    "Moins sécurisé si mal configuré",
-                    "Coût d'installation élevé",
-                    "Moins sécurisé si mal configuré"),
+                 "Vitesse très élevée", "Mobilité limitée",
+                 "Moins sécurisé si mal configuré",
+                 "Coût d'installation élevé",
+                 "Moins sécurisé si mal configuré"),
                 (theme_id, "Quel moyen de communication utilise des signaux lumineux ?",
-                    "Câble Ethernet", "Wi-Fi", "Fibre optique", "Bluetooth",
-                    "Fibre optique"),
+                 "Câble Ethernet", "Wi-Fi", "Fibre optique", "Bluetooth",
+                 "Fibre optique"),
                 (theme_id, "Quel est un avantage des réseaux cellulaires comme la 5G ?",
-                    "Coût d'installation élevé", "Couverture géographique étendue",
-                    "Latence élevée", "Débit limité", "Couverture géographique étendue"),
+                 "Coût d'installation élevé", "Couverture géographique étendue",
+                 "Latence élevée", "Débit limité", "Couverture géographique étendue"),
                 (theme_id, "Quel type de communication est utilisé pour les zones éloignées ?",
-                    "Communication par satellite", "Wi-Fi", "Bluetooth",
-                    "Câble Ethernet", "Communication par satellite"),
+                 "Communication par satellite", "Wi-Fi", "Bluetooth",
+                 "Câble Ethernet", "Communication par satellite"),
                 (theme_id, "Quel est le rôle d'un VPN ?",
-                    "Augmenter la vitesse de connexion",
-                    "Créer une connexion sécurisée",
-                    "Remplacer le Wi-Fi",
-                    "Transmettre des données par satellite",
-                    "Créer une connexion sécurisée"),
+                 "Augmenter la vitesse de connexion",
+                 "Créer une connexion sécurisée",
+                 "Remplacer le Wi-Fi",
+                 "Transmettre des données par satellite",
+                 "Créer une connexion sécurisée"),
                 (theme_id, "Quel protocole assure le transfert fiable des données ?",
-                    "UDP", "TCP/IP", "HTTP", "FTP", "TCP/IP"),
+                 "UDP", "TCP/IP", "HTTP", "FTP", "TCP/IP"),
                 (theme_id, "Quel est un inconvénient de la communication par satellite ?",
-                    "Accès dans des zones difficiles", "Latence élevée",
-                    "Vitesse très élevée", "Coût d'installation faible",
-                    "Latence élevée"),
+                 "Accès dans des zones difficiles", "Latence élevée",
+                 "Vitesse très élevée", "Coût d'installation faible",
+                 "Latence élevée"),
                 (theme_id, "Quel type de communication est le plus courant dans un réseau local ?",
-                    "Wi-Fi", "Bluetooth", "Câble Ethernet", "Fibre optique",
-                    "Câble Ethernet"),
+                 "Wi-Fi", "Bluetooth", "Câble Ethernet", "Fibre optique",
+                 "Câble Ethernet"),
                 (theme_id, "Quel est un avantage du Bluetooth ?",
-                    "Vitesse très élevée", "Portée illimitée",
-                    "Faible consommation d'énergie", "Coût d'installation faible",
-                    "Faible consommation d'énergie"),
+                 "Vitesse très élevée", "Portée illimitée",
+                 "Faible consommation d'énergie", "Coût d'installation faible",
+                 "Faible consommation d'énergie"),
                 (theme_id, "Quel protocole est utilisé pour sécuriser les échanges sur le web ?",
-                    "FTP", "UDP", "HTTPS", "TCP", "HTTPS"),
+                 "FTP", "UDP", "HTTPS", "TCP", "HTTPS"),
                 (theme_id, "Quel est un inconvénient de la technologie Powerline Communication (CPL) ?",
-                    "Utilisation de l'infrastructure électrique existante",
-                    "Performances variables selon la qualité du réseau électrique",
-                    "Coût d'installation faible",
-                    "Facilité d'utilisation",
-                    "Performances variables selon la qualité du réseau électrique"),
+                 "Utilisation de l'infrastructure électrique existante",
+                 "Performances variables selon la qualité du réseau électrique",
+                 "Coût d'installation faible",
+                 "Facilité d'utilisation",
+                 "Performances variables selon la qualité du réseau électrique"),
                 (theme_id, "Quel est l'impact de l'Internet des objets (IoT) ?",
-                    "Il rend les appareils plus lents.",
-                    "Il automatise et optimise divers aspects de la vie quotidienne.",
-                    "Il limite la connectivité des appareils.",
-                    "Il nécessite plus de câbles.",
-                    "Il automatise et optimise divers aspects de la vie quotidienne."),
+                 "Il rend les appareils plus lents.",
+                 "Il automatise et optimise divers aspects de la vie quotidienne.",
+                 "Il limite la connectivité des appareils.",
+                 "Il nécessite plus de câbles.",
+                 "Il automatise et optimise divers aspects de la vie quotidienne."),
                 # Questions supplémentaires créées
                 (theme_id, "Quel est l'objectif principal du protocole DNS ?",
-                    "Garantir la sécurité des données",
-                    "Convertir les noms de domaine en adresses IP",
-                    "Optimiser la vitesse des réseaux",
-                    "Assurer la compatibilité entre les appareils",
-                    "Convertir les noms de domaine en adresses IP"),
+                 "Garantir la sécurité des données",
+                 "Convertir les noms de domaine en adresses IP",
+                 "Optimiser la vitesse des réseaux",
+                 "Assurer la compatibilité entre les appareils",
+                 "Convertir les noms de domaine en adresses IP"),
                 (theme_id, "Quelle est la principale différence entre IPv4 et IPv6 ?",
-                    "IPv4 est plus rapide que IPv6",
-                    "IPv6 utilise un adressage 128 bits",
-                    "IPv4 prend en charge la sécurité intégrée",
-                    "IPv6 est incompatible avec le Wi-Fi",
-                    "IPv6 utilise un adressage 128 bits"),
+                 "IPv4 est plus rapide que IPv6",
+                 "IPv6 utilise un adressage 128 bits",
+                 "IPv4 prend en charge la sécurité intégrée",
+                 "IPv6 est incompatible avec le Wi-Fi",
+                 "IPv6 utilise un adressage 128 bits"),
                 (theme_id, "Quel appareil connecte des réseaux différents ?",
-                    "Commutateur", "Routeur", "Point d'accès", "Hub",
-                    "Routeur"),
+                 "Commutateur", "Routeur", "Point d'accès", "Hub",
+                 "Routeur"),
                 (theme_id, "Que fait une adresse MAC ?",
-                    "Identifie un appareil sur un réseau local",
-                    "Assure la sécurité des données",
-                    "Gère le routage des paquets",
-                    "Optimise la vitesse du Wi-Fi",
-                    "Identifie un appareil sur un réseau local"),
+                 "Identifie un appareil sur un réseau local",
+                 "Assure la sécurité des données",
+                 "Gère le routage des paquets",
+                 "Optimise la vitesse du Wi-Fi",
+                 "Identifie un appareil sur un réseau local"),
                 (theme_id, "Quel outil est souvent utilisé pour surveiller le trafic réseau ?",
-                    "Wireshark", "Cisco", "Java", "DNS",
-                    "Wireshark")
+                 "Wireshark", "Cisco", "Java", "DNS",
+                 "Wireshark")
             ]
 
-            self.cursor.executemany(insert_questions_query, questions)
-            self.conn.commit()
+            # Exécuter les insertions pour chaque question
+            await conn.executemany(insert_questions_query, questions)
+
             print("Thème et questions insérés avec succès.")
 
         except Exception as e:
-            print("Erreur lors de l'insertion des questions :", e)
-        finally:
-            if self.cursor:
-                self.cursor.close()
-            if self.conn:
-                self.conn.close()
+            print("Erreur lors de l'insertion des données :", e)
 
-    def insert_theme2_questions(self):
+        finally:
+            # Fermeture de la connexion
+            await conn.close()
+
+    async def insert_theme2_questions(self):
         """
         Insère un thème et des questions d'exemple dans les tables `themes` et `questions`.
         """
         try:
-            # Crée une connexion à la base de données
-            self.create_connection()
+            # Connexion à la base de données
+            conn = await asyncpg.connect(**self.db_config)
 
-            # Insérer un thème
-            insert_theme_query = "INSERT INTO themes (name) VALUES (%s)"
-            self.cursor.execute(insert_theme_query, ("La structure des applications sur le réseau internet",))
-
-            # Récupérer l'ID du thème inséré
-            theme_id = self.cursor.lastrowid
+            # Insérer un thème et récupérer son ID
+            insert_theme_query = """
+            INSERT INTO themes (name) 
+            VALUES ($1) 
+            RETURNING id;
+            """
+            theme_id = await conn.fetchval(insert_theme_query, "La structure des applications sur le réseau internet")
 
             # Insérer les questions liées au thème
             insert_questions_query = """
             INSERT INTO questions (theme_id, question, option1, option2, option3, option4, correct_option)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES ($1, $2, $3, $4, $5, $6, $7);
             """
-
             questions = [
                 # Questions extraites du document
                 (theme_id, "Quel protocole est utilisé pour envoyer des emails ?",
@@ -435,39 +407,39 @@ class DataBase:
                  "Fournir des adresses IP pour les noms de domaine")
             ]
 
-            self.cursor.executemany(insert_questions_query, questions)
-            self.conn.commit()
+            # Exécuter les insertions pour chaque question
+            await conn.executemany(insert_questions_query, questions)
+
             print("Thème et questions insérés avec succès.")
 
         except Exception as e:
-            print("Erreur lors de l'insertion des questions :", e)
-        finally:
-            if self.cursor:
-                self.cursor.close()
-            if self.conn:
-                self.conn.close()
+            print("Erreur lors de l'insertion des données :", e)
 
-    def insert_theme3_questions(self):
+        finally:
+            # Fermeture de la connexion
+            await conn.close()
+
+    async def insert_theme3_questions(self):
         """
         Insère un thème et des questions d'exemple dans les tables `themes` et `questions`.
         """
         try:
-            # Crée une connexion à la base de données
-            self.create_connection()
+            # Connexion à la base de données
+            conn = await asyncpg.connect(**self.db_config)
 
-            # Insérer un thème
-            insert_theme_query = "INSERT INTO themes (name) VALUES (%s)"
-            self.cursor.execute(insert_theme_query, ("Les Protocoles du Web",))
-
-            # Récupérer l'ID du thème inséré
-            theme_id = self.cursor.lastrowid
+            # Insérer un thème et récupérer son ID
+            insert_theme_query = """
+            INSERT INTO themes (name) 
+            VALUES ($1) 
+            RETURNING id;
+            """
+            theme_id = await conn.fetchval(insert_theme_query, "Les Protocoles du Web")
 
             # Insérer les questions liées au thème
             insert_questions_query = """
             INSERT INTO questions (theme_id, question, option1, option2, option3, option4, correct_option)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES ($1, $2, $3, $4, $5, $6, $7);
             """
-
             questions = [
                 # Questions extraites du document
                 (theme_id, "Quel protocole est utilisé pour sécuriser les échanges sur le web ?",
@@ -528,39 +500,39 @@ class DataBase:
                  "FTP", "SNMP", "HTTP", "TCP", "SNMP")
             ]
 
-            self.cursor.executemany(insert_questions_query, questions)
-            self.conn.commit()
+            # Exécuter les insertions pour chaque question
+            await conn.executemany(insert_questions_query, questions)
+
             print("Thème et questions insérés avec succès.")
 
         except Exception as e:
-            print("Erreur lors de l'insertion des questions :", e)
-        finally:
-            if self.cursor:
-                self.cursor.close()
-            if self.conn:
-                self.conn.close()
+            print("Erreur lors de l'insertion des données :", e)
 
-    def insert_theme4_questions(self):
+        finally:
+            # Fermeture de la connexion
+            await conn.close()
+
+    async def insert_theme4_questions(self):
         """
         Insère un thème et des questions d'exemple dans les tables `themes` et `questions`.
         """
         try:
-            # Crée une connexion à la base de données
-            self.create_connection()
+            # Connexion à la base de données
+            conn = await asyncpg.connect(**self.db_config)
 
-            # Insérer un thème
-            insert_theme_query = "INSERT INTO themes (name) VALUES (%s)"
-            self.cursor.execute(insert_theme_query, ("Les Moteurs de Recherche",))
-
-            # Récupérer l'ID du thème inséré
-            theme_id = self.cursor.lastrowid
+            # Insérer un thème et récupérer son ID
+            insert_theme_query = """
+            INSERT INTO themes (name) 
+            VALUES ($1) 
+            RETURNING id;
+            """
+            theme_id = await conn.fetchval(insert_theme_query, "les Moteurs de Recherche")
 
             # Insérer les questions liées au thème
             insert_questions_query = """
             INSERT INTO questions (theme_id, question, option1, option2, option3, option4, correct_option)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES ($1, $2, $3, $4, $5, $6, $7);
             """
-
             questions = [
                 # Questions fournies
                 (theme_id, "Quel est le rôle principal d'un moteur de recherche ?",
@@ -655,28 +627,33 @@ class DataBase:
                  "Faciliter l'exploration des pages par les moteurs de recherche")
             ]
 
-            self.cursor.executemany(insert_questions_query, questions)
-            self.conn.commit()
+            # Exécuter les insertions pour chaque question
+            await conn.executemany(insert_questions_query, questions)
+
             print("Thème et questions insérés avec succès.")
 
         except Exception as e:
-            print("Erreur lors de l'insertion des questions :", e)
+            print("Erreur lors de l'insertion des données :", e)
+
         finally:
-            if self.cursor:
-                self.cursor.close()
-            if self.conn:
-                self.conn.close()
+            # Fermeture de la connexion
+            await conn.close()
 
+# Exemple d'utilisation
+import asyncio
 
-# Initialisation et création de la base de données
-db = DataBase()
-db.createDB()
-db.create_table_users()
-db.create_table_themes()
-db.create_table_questions()
-db.insert_sample_questions()
-db.insert_theme1_questions()
-db.insert_theme2_questions()
-db.insert_theme3_questions()
-db.insert_theme4_questions()
-db.create_table_scores_history()
+async def main():
+    db = DataBase()
+    # await db.createDB()
+    await db.create_table_users()
+    await db.create_table_themes()
+    await db.create_table_questions()
+    await db.create_table_scores_history()
+    # await db.insert_sample_questions()
+    await db.insert_theme1_questions()
+    await db.insert_theme2_questions()
+    await db.insert_theme3_questions()
+    await db.insert_theme4_questions()
+
+# Exécuter la fonction principale
+asyncio.run(main())
