@@ -11,6 +11,19 @@ from telegram.ext import (
     filters,
 )
 import os
+from flask import Flask
+import threading
+
+# Lancer le serveur Flask pour écouter un port fictif
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot Telegram actif !"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))  # Render utilise une variable d'environnement PORT
+    app.run(host="0.0.0.0", port=port)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DB_HOST = os.getenv("DB_HOST")
@@ -266,6 +279,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 # Lancer l'application
+
+# Lancer l'application Telegram
 def main() -> None:
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -276,13 +291,19 @@ def main() -> None:
             THEMES: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_theme)],
             QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_answer)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],  # Commande pour annuler,
+        fallbacks=[CommandHandler("cancel", cancel)],  # Commande pour annuler
     )
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("historique", show_history))
     application.add_handler(CommandHandler("progression", show_progress_chart))
-    application.run_polling()
+
+    # Lancer le bot Telegram dans un thread séparé
+    threading.Thread(target=application.run_polling).start()
 
 if __name__ == "__main__":
+    # Lancer le serveur Flask
+    threading.Thread(target=run_flask).start()
+
+    # Lancer l'application principale
     main()
