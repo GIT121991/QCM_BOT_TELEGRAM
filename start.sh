@@ -1,2 +1,2 @@
 #!/bin/bash
-python Bot_Telegram.py
+python Bot_QCM.py
